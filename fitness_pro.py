@@ -8,7 +8,7 @@ import time
 from datetime import datetime
 
 # --- НАЛАШТУВАННЯ ---
-WIN = "AI Fitness Pro V6.1 (UI Fix)"
+WIN = "AI Fitness Pro V6.2 (Ultra Thin UI)"
 MODEL_PATH = "voices/amy.onnx"
 SCREEN_W = 1920
 SCREEN_H = 1080
@@ -105,7 +105,7 @@ def main():
     current_highscore = highscores.get(mode, 0)
     is_new_record = False
 
-    speak("Dashboard updated.")
+    speak("UI updated.")
 
     try:
         while True:
@@ -179,20 +179,17 @@ def main():
             cv2.putText(frame, f"TIME: {timer_text}", (30, 420), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_CYAN, 2)
             cv2.putText(frame, f"KCAL: {calories:.1f}", (200, 420), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_MAGENTA, 2)
 
-            # --- НОВИЙ СТИЛЬНИЙ СТАТУС БАР ---
-            # Визначаємо колір
+            # --- УЛЬТРА-ТОНКИЙ СТАТУС БАР ---
             status_color = NEON_GREEN if feedback_text in ["PERFECT", "STRONG"] else (NEON_MAGENTA if feedback_text == "LOWER" else NEON_CYAN)
-            # Координати (тонший: висота 50px)
-            bar_y1, bar_y2 = 480, 530
-            # 1. Напівпрозорий фон
-            overlay_bar = frame.copy()
-            cv2.rectangle(overlay_bar, (20, bar_y1), (panel_w-20, bar_y2), status_color, -1)
-            cv2.addWeighted(overlay_bar, 0.3, frame, 0.7, 0, frame)
-            # 2. Неонова рамка
-            cv2.rectangle(frame, (20, bar_y1), (panel_w-20, bar_y2), status_color, 3, cv2.LINE_AA)
-            # 3. Текст (світиться кольором)
-            text_y = int((bar_y1 + bar_y2) / 2) + 10
-            cv2.putText(frame, feedback_text, (40, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1.2, status_color, 2, cv2.LINE_AA)
+            # Висота всього 30 пікселів!
+            bar_y1, bar_y2 = 460, 490 
+            
+            # 1. Тонка неонова рамка
+            cv2.rectangle(frame, (30, bar_y1), (panel_w-30, bar_y2), status_color, 2, cv2.LINE_AA)
+            
+            # 2. Текст (менший шрифт)
+            text_y = int((bar_y1 + bar_y2) / 2) + 8
+            cv2.putText(frame, feedback_text, (45, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, status_color, 2, cv2.LINE_AA)
 
             cv2.putText(frame, "[1] SQUATS  [2] PUSHUPS", (30, h-100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_CYAN, 1)
             cv2.putText(frame, "[R] RESET   [Q] EXIT", (30, h-60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100,100,255), 1)
