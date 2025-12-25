@@ -7,23 +7,24 @@ import threading
 import time
 
 # --- НАЛАШТУВАННЯ ---
-WIN = "AI Fitness Pro V4.1"
+WIN = "AI Fitness Pro V5.0 (Neon)"
 MODEL_PATH = "voices/amy.onnx"
 SCREEN_W = 1920
 SCREEN_H = 1080
 
-# Кольори (BGR)
-CYAN = (255, 255, 0)
-GREEN = (0, 255, 0)
-ORANGE = (0, 165, 255)
-RED = (0, 0, 255)
-DARK = (30, 30, 30)
+# --- КОЛЬОРИ (BGR) ---
+# Неоновий стиль
+NEON_CYAN = (255, 255, 0)    # Основний колір
+NEON_MAGENTA = (255, 0, 255) # Колір напруги
+NEON_GREEN = (0, 255, 0)     # Успіх
+WHITE = (255, 255, 255)
+DARK_BG = (20, 20, 20)       # Майже чорний для панелі
 
-# --- МОДУЛЬ ГОЛОСУ ---
+# --- ГОЛОС ---
 last_speech_time = 0
 def speak_worker(text):
-    # Додаємо --length-scale для трохи повільнішого мовлення, якщо треба
-    cmd = f'echo "{text}" | piper --model {MODEL_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw - 2>/dev/null'
+    safe_text = ". " + text
+    cmd = f'echo "{safe_text}" | piper --model {MODEL_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw - 2>/dev/null'
     os.system(cmd)
 
 def speak(text, cooldown=1.5):
@@ -41,8 +42,38 @@ def calculate_angle(a, b, c):
     if angle > 180.0: angle = 360-angle
     return angle
 
+# --- КРАСИВЕ МАЛЮВАННЯ (НЕОН) ---
+def draw_neon_style(frame, landmarks, w, h, color_main):
+    # Список зв'язків (Тільки тіло, без обличчя!)
+    connections = [
+        (11, 12), (11, 13), (13, 15),       # Руки (ліва)
+        (12, 14), (14, 16),                 # Руки (права)
+        (11, 23), (12, 24), (23, 24),       # Тулуб
+        (23, 25), (25, 27),                 # Ноги (ліва)
+        (24, 26), (26, 28)                  # Ноги (права)
+    ]
+
+    # Малюємо лінії (Кістки)
+    for start_idx, end_idx in connections:
+        # Отримуємо координати
+        p1 = (int(landmarks[start_idx].x * w), int(landmarks[start_idx].y * h))
+        p2 = (int(landmarks[end_idx].x * w), int(landmarks[end_idx].y * h))
+        
+        # 1. Товста лінія (Світіння)
+        cv2.line(frame, p1, p2, color_main, 6, cv2.LINE_AA)
+        # 2. Тонка біла лінія (Центр)
+        cv2.line(frame, p1, p2, WHITE, 2, cv2.LINE_AA)
+
+    # Малюємо точки (Суглоби) - теж тільки тіло
+    body_indices = [11,12,13,14,15,16,23,24,25,26,27,28]
+    for idx in body_indices:
+        cx, cy = int(landmarks[idx].x * w), int(landmarks[idx].y * h)
+        # Зовнішнє коло
+        cv2.circle(frame, (cx, cy), 8, color_main, -1, cv2.LINE_AA)
+        # Внутрішнє біле
+        cv2.circle(frame, (cx, cy), 3, WHITE, -1, cv2.LINE_AA)
+
 def main():
-    # 1. ЗАПУСК КАМЕРИ
     picam2 = Picamera2()
     cfg = picam2.create_video_configuration(
         main={"size": (1280, 720), "format": "RGB888"},
@@ -51,25 +82,19 @@ def main():
     picam2.configure(cfg)
     picam2.start()
 
-    # 2. MEDIAPIPE
     mp_pose = mp.solutions.pose
-    mp_drawing = mp.solutions.drawing_utils
-    draw_spec_p = mp_drawing.DrawingSpec(color=CYAN, thickness=5, circle_radius=5)
-    draw_spec_l = mp_drawing.DrawingSpec(color=(255,255,255), thickness=3)
-    
     pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-    # 3. ВІКНО
     cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
     cv2.setWindowProperty(WIN, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-    # 4. ЗМІННІ
     mode = "SQUATS"
     counter = 0
     state = "UP"
     feedback_text = "READY"
+    current_color = NEON_CYAN # Початковий колір
     
-    speak("System ready.")
+    speak("Neon mode loaded.")
 
     try:
         while True:
@@ -77,17 +102,19 @@ def main():
             h, w, _ = frame.shape
             results = pose.process(frame)
             
+            # --- ЕСТЕТИЧНА ПАНЕЛЬ ---
             panel_w = int(w * 0.35)
             overlay = frame.copy()
-            cv2.rectangle(overlay, (0, 0), (panel_w, h), DARK, -1)
-            cv2.addWeighted(overlay, 0.85, frame, 0.15, 0, frame)
+            # Темна напівпрозора панель
+            cv2.rectangle(overlay, (0, 0), (panel_w, h), DARK_BG, -1)
+            cv2.addWeighted(overlay, 0.9, frame, 0.1, 0, frame)
 
             if results.pose_landmarks:
                 lm = results.pose_landmarks.landmark
                 angle = 0
                 main_point = (0,0)
                 
-                # --- ЛОГІКА ---
+                # ЛОГІКА
                 if mode == "SQUATS":
                     p1 = [lm[23].x * w, lm[23].y * h]
                     p2 = [lm[25].x * w, lm[25].y * h]
@@ -98,16 +125,19 @@ def main():
                     if angle > 160:
                         if state == "DOWN": speak("Up")
                         state = "UP"
+                        current_color = NEON_CYAN # Розслаблений
+                    
                     if angle < 100 and state == "UP":
                         state = "DOWN"
                         counter += 1
-                        # ТУТ ЗМІНА: додаємо слово "reps" для чіткості
-                        speak(f"{counter} reps")
-                        feedback_text = "GOOD"
+                        speak(f"Repetition {counter}")
+                        feedback_text = "PERFECT"
+                        current_color = NEON_GREEN # Успіх
+                    
                     if 110 < angle < 140 and state == "UP":
                         feedback_text = "LOWER"
-                        cv2.line(frame, tuple(map(int, p1)), tuple(map(int, p2)), RED, 5)
-
+                        current_color = NEON_MAGENTA # Напруга
+                        
                 elif mode == "PUSHUPS":
                     p1 = [lm[11].x * w, lm[11].y * h]
                     p2 = [lm[13].x * w, lm[13].y * h]
@@ -118,33 +148,47 @@ def main():
                     if angle > 160:
                         if state == "DOWN": speak("Up")
                         state = "UP"
+                        current_color = NEON_CYAN
+                        
                     if angle < 90 and state == "UP":
                         state = "DOWN"
                         counter += 1
-                        # ТУТ ЗМІНА: додаємо слово "reps" для чіткості
-                        speak(f"{counter} reps")
+                        speak(f"Repetition {counter}")
                         feedback_text = "STRONG"
+                        current_color = NEON_GREEN
+                        
                     if 95 < angle < 130 and state == "UP":
                         feedback_text = "LOWER"
+                        current_color = NEON_MAGENTA
 
+                # --- МАЛЮЄМО НОВИЙ СКЕЛЕТ ---
+                draw_neon_style(frame, lm, w, h, current_color)
+
+                # Кут
                 if main_point != (0,0):
+                    # Гарний кружечок під текстом кута
+                    cv2.circle(frame, (main_point[0]+55, main_point[1]-15), 40, DARK_BG, -1)
                     cv2.putText(frame, f"{int(angle)}", (main_point[0]+20, main_point[1]), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 1, CYAN, 2)
-                
-                mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS, draw_spec_p, draw_spec_l)
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, NEON_CYAN, 2, cv2.LINE_AA)
 
             # --- ІНТЕРФЕЙС ---
-            cv2.putText(frame, mode, (30, 80), cv2.FONT_HERSHEY_DUPLEX, 1.2, (200,200,200), 2)
-            cv2.putText(frame, str(counter), (40, 300), cv2.FONT_HERSHEY_SIMPLEX, 6, (255,255,255), 12)
-            cv2.putText(frame, "reps", (50, 350), cv2.FONT_HERSHEY_SIMPLEX, 1, (150,150,150), 2)
+            # Заголовок
+            cv2.putText(frame, mode, (30, 80), cv2.FONT_HERSHEY_DUPLEX, 1.5, WHITE, 2, cv2.LINE_AA)
+            
+            # Лічильник (Великий)
+            cv2.putText(frame, str(counter), (40, 300), cv2.FONT_HERSHEY_SIMPLEX, 7, WHITE, 14, cv2.LINE_AA)
+            cv2.putText(frame, "REPS", (55, 360), cv2.FONT_HERSHEY_SIMPLEX, 1, (200,200,200), 2, cv2.LINE_AA)
 
-            color = GREEN if feedback_text in ["GOOD", "STRONG"] else (ORANGE if feedback_text == "LOWER" else CYAN)
-            cv2.rectangle(frame, (20, 450), (panel_w-20, 550), color, -1)
-            cv2.putText(frame, feedback_text, (40, 515), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0,0,0), 3)
+            # Статус бар
+            bar_color = NEON_GREEN if feedback_text in ["PERFECT", "STRONG"] else (NEON_MAGENTA if feedback_text == "LOWER" else NEON_CYAN)
+            cv2.rectangle(frame, (20, 450), (panel_w-20, 550), bar_color, -1)
+            cv2.putText(frame, feedback_text, (40, 515), cv2.FONT_HERSHEY_SIMPLEX, 1.5, DARK_BG, 3, cv2.LINE_AA)
 
-            cv2.putText(frame, "[1] SQUATS  [2] PUSHUPS", (30, h-100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, CYAN, 1)
-            cv2.putText(frame, "[R] RESET   [Q] EXIT", (30, h-60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, RED, 1)
+            # Кнопки
+            cv2.putText(frame, "[1] SQUATS  [2] PUSHUPS", (30, h-100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_CYAN, 1, cv2.LINE_AA)
+            cv2.putText(frame, "[R] RESET   [Q] EXIT", (30, h-60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100,100,255), 1, cv2.LINE_AA)
 
+            # Вивід
             bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             final_frame = cv2.resize(bgr_frame, (SCREEN_W, SCREEN_H))
             cv2.imshow(WIN, final_frame)
