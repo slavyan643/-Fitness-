@@ -5,10 +5,10 @@ import mediapipe as mp
 import os
 import threading
 import time
-import gc # Додали збирач сміття для очистки пам'яті
+import gc
 
 # --- НАЛАШТУВАННЯ ---
-WIN = "AI Fitness Pro V8.2 (Stable Lite)"
+WIN = "AI Fitness Pro V8.3 (Stable)"
 MODEL_PATH = "voices/amy.onnx"
 SCREEN_W = 1920
 SCREEN_H = 1080
@@ -19,7 +19,7 @@ PASTEL_CORAL = (180, 130, 240)
 PASTEL_MINT = (200, 255, 180)
 PASTEL_BLUE = (240, 220, 180)
 CHARCOAL = (50, 50, 50)
-SOFT_GREY = (160, 160, 160)
+SOFT_GREY = (160, 160, 160)   # <--- ОСЬ ЦЕЙ КОЛІР БУВ ПРОПУЩЕНИЙ
 WARM_WHITE = (245, 245, 245)
 PURE_WHITE = (255, 255, 255)
 
@@ -63,8 +63,7 @@ def calculate_angle(a, b, c):
 
 def main():
     picam2 = Picamera2()
-    # ОПТИМІЗАЦІЯ: Зменшуємо вхідну картинку до 640x480 і FPS до 20
-    # MediaPipe все одно стискає картинку, тому HD якість на вході тільки гріє процесор дарма.
+    # Оптимізація: 640x480 вхід, 20 fps (щоб не грілася)
     cfg = picam2.create_video_configuration(
         main={"size": (640, 480), "format": "RGB888"},
         controls={"FrameRate": 20}
@@ -88,24 +87,20 @@ def main():
     current_highscore = highscores.get(mode, 0)
     is_new_record = False
     biomech_error = False 
-    
-    # Лічильник кадрів для очистки пам'яті
     frame_count = 0
 
-    speak("Optimized mode ready.")
+    speak("System stable.")
 
     try:
         while True:
             frame = picam2.capture_array()
-            # ОПТИМІЗАЦІЯ: Примусово чистимо пам'ять кожні 100 кадрів
+            # Чистимо пам'ять кожні 100 кадрів
             frame_count += 1
-            if frame_count % 100 == 0:
-                gc.collect()
+            if frame_count % 100 == 0: gc.collect()
 
             h, w, _ = frame.shape
             results = pose.process(frame)
             
-            # Ефект м'якого фокусу (легша версія)
             white_overlay = np.full((h, w, 3), WARM_WHITE, dtype=np.uint8)
             cv2.addWeighted(white_overlay, 0.1, frame, 0.9, 0, frame)
 
@@ -125,7 +120,6 @@ def main():
                     
                     knee_dist = abs(lm[25].x - lm[26].x)
                     ankle_dist = abs(lm[27].x - lm[28].x)
-                    
                     if state == "DOWN" and knee_dist < (ankle_dist * 0.7):
                         feedback_text = "KNEES OUT!"; biomech_error = True
 
@@ -196,7 +190,6 @@ def main():
 
             cv2.putText(frame, "Keys: [1] Squats [2] Pushups [R] Reset", (w//2 - 200, h-30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, SOFT_GREY, 1, cv2.LINE_AA)
 
-            # Розтягуємо маленьку картинку на великий екран (це швидко для GPU)
             bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             final_frame = cv2.resize(bgr_frame, (SCREEN_W, SCREEN_H))
             cv2.imshow(WIN, final_frame)
