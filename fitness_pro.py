@@ -8,7 +8,7 @@ import time
 from datetime import datetime
 
 # --- НАЛАШТУВАННЯ ---
-WIN = "AI Fitness Pro V6.0 (Dashboard)"
+WIN = "AI Fitness Pro V6.1 (UI Fix)"
 MODEL_PATH = "voices/amy.onnx"
 SCREEN_W = 1920
 SCREEN_H = 1080
@@ -20,7 +20,7 @@ NEON_MAGENTA = (255, 0, 255)
 NEON_GREEN = (0, 255, 0)
 WHITE = (255, 255, 255)
 DARK_BG = (20, 20, 20)
-GOLD = (0, 215, 255) # Для рекордів
+GOLD = (0, 215, 255)
 
 # --- УПРАВЛІННЯ ДАНИМИ ---
 def load_highscores():
@@ -40,7 +40,7 @@ def save_highscore(mode, score):
         with open(HIGHSCORE_FILE, "w") as f:
             for k, v in scores.items():
                 f.write(f"{k}:{v}\n")
-        return True # Новий рекорд!
+        return True
     return False
 
 # --- ГОЛОС ---
@@ -93,21 +93,19 @@ def main():
     cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
     cv2.setWindowProperty(WIN, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-    # ЗМІННІ СТАНУ
     mode = "SQUATS"
     counter = 0
     state = "UP"
     feedback_text = "READY"
     current_color = NEON_CYAN
     
-    # Статистика
     start_time = time.time()
     calories = 0.0
     highscores = load_highscores()
     current_highscore = highscores.get(mode, 0)
     is_new_record = False
 
-    speak("Dashboard loaded. Let's workout.")
+    speak("Dashboard updated.")
 
     try:
         while True:
@@ -115,13 +113,12 @@ def main():
             h, w, _ = frame.shape
             results = pose.process(frame)
             
-            # --- ПАНЕЛЬ (Dashboard) ---
+            # --- ПАНЕЛЬ ---
             panel_w = int(w * 0.35)
             overlay = frame.copy()
             cv2.rectangle(overlay, (0, 0), (panel_w, h), DARK_BG, -1)
             cv2.addWeighted(overlay, 0.9, frame, 0.1, 0, frame)
 
-            # Таймер
             elapsed = int(time.time() - start_time)
             mins, secs = divmod(elapsed, 60)
             timer_text = f"{mins:02}:{secs:02}"
@@ -131,7 +128,6 @@ def main():
                 angle = 0
                 main_point = (0,0)
                 
-                # --- ЛОГІКА ---
                 if mode == "SQUATS":
                     p1=[lm[23].x*w,lm[23].y*h]; p2=[lm[25].x*w,lm[25].y*h]; p3=[lm[27].x*w,lm[27].y*h]
                     angle = calculate_angle(p1, p2, p3)
@@ -141,24 +137,15 @@ def main():
                         if state == "DOWN": speak("Up")
                         state = "UP"
                         current_color = NEON_CYAN
-                    
                     if angle < 100 and state == "UP":
-                        state = "DOWN"
-                        counter += 1
-                        calories += 0.32 # Ккал за присідання
-                        speak(f"Repetition {counter}")
-                        feedback_text = "PERFECT"
+                        state = "DOWN"; counter += 1; calories += 0.32
+                        speak(f"Repetition {counter}"); feedback_text = "PERFECT"
                         current_color = NEON_GREEN
-                        # Перевірка рекорду
                         if counter > current_highscore:
                             if not is_new_record: speak("New Record!")
-                            is_new_record = True
-                            current_highscore = counter
-                            save_highscore(mode, current_highscore)
-
+                            is_new_record = True; current_highscore = counter; save_highscore(mode, current_highscore)
                     if 110 < angle < 140 and state == "UP":
-                        feedback_text = "LOWER"
-                        current_color = NEON_MAGENTA
+                        feedback_text = "LOWER"; current_color = NEON_MAGENTA
 
                 elif mode == "PUSHUPS":
                     p1=[lm[11].x*w,lm[11].y*h]; p2=[lm[13].x*w,lm[13].y*h]; p3=[lm[15].x*w,lm[15].y*h]
@@ -167,51 +154,46 @@ def main():
 
                     if angle > 160:
                         if state == "DOWN": speak("Up")
-                        state = "UP"
-                        current_color = NEON_CYAN
+                        state = "UP"; current_color = NEON_CYAN
                     if angle < 90 and state == "UP":
-                        state = "DOWN"
-                        counter += 1
-                        calories += 0.45 # Ккал за віджимання
-                        speak(f"Repetition {counter}")
-                        feedback_text = "STRONG"
+                        state = "DOWN"; counter += 1; calories += 0.45
+                        speak(f"Repetition {counter}"); feedback_text = "STRONG"
                         current_color = NEON_GREEN
                         if counter > current_highscore:
                             if not is_new_record: speak("New Record!")
-                            is_new_record = True
-                            current_highscore = counter
-                            save_highscore(mode, current_highscore)
+                            is_new_record = True; current_highscore = counter; save_highscore(mode, current_highscore)
                     if 95 < angle < 130 and state == "UP":
-                        feedback_text = "LOWER"
-                        current_color = NEON_MAGENTA
+                        feedback_text = "LOWER"; current_color = NEON_MAGENTA
 
                 draw_neon_style(frame, lm, w, h, current_color)
                 if main_point != (0,0):
                     cv2.circle(frame, (main_point[0]+55, main_point[1]-15), 40, DARK_BG, -1)
                     cv2.putText(frame, f"{int(angle)}", (main_point[0]+20, main_point[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, NEON_CYAN, 2, cv2.LINE_AA)
 
-            # --- ІНТЕРФЕЙС V6 ---
-            # Заголовок
+            # --- ІНТЕРФЕЙС ---
             cv2.putText(frame, mode, (30, 80), cv2.FONT_HERSHEY_DUPLEX, 1.3, WHITE, 2, cv2.LINE_AA)
-
-            # Рекорд (Золотом)
             record_color = GOLD if is_new_record else (180, 180, 180)
             cv2.putText(frame, f"BEST: {current_highscore}", (30, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.8, record_color, 2, cv2.LINE_AA)
-
-            # Лічильник
             cv2.putText(frame, str(counter), (40, 300), cv2.FONT_HERSHEY_SIMPLEX, 7, WHITE, 14, cv2.LINE_AA)
             cv2.putText(frame, "REPS", (55, 360), cv2.FONT_HERSHEY_SIMPLEX, 1, (200,200,200), 2, cv2.LINE_AA)
-
-            # Інфо-блок (Час і Ккал)
             cv2.putText(frame, f"TIME: {timer_text}", (30, 420), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_CYAN, 2)
             cv2.putText(frame, f"KCAL: {calories:.1f}", (200, 420), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_MAGENTA, 2)
 
-            # Статус бар
-            bar_color = NEON_GREEN if feedback_text in ["PERFECT", "STRONG"] else (NEON_MAGENTA if feedback_text == "LOWER" else NEON_CYAN)
-            cv2.rectangle(frame, (20, 470), (panel_w-20, 550), bar_color, -1)
-            cv2.putText(frame, feedback_text, (40, 525), cv2.FONT_HERSHEY_SIMPLEX, 1.5, DARK_BG, 3, cv2.LINE_AA)
+            # --- НОВИЙ СТИЛЬНИЙ СТАТУС БАР ---
+            # Визначаємо колір
+            status_color = NEON_GREEN if feedback_text in ["PERFECT", "STRONG"] else (NEON_MAGENTA if feedback_text == "LOWER" else NEON_CYAN)
+            # Координати (тонший: висота 50px)
+            bar_y1, bar_y2 = 480, 530
+            # 1. Напівпрозорий фон
+            overlay_bar = frame.copy()
+            cv2.rectangle(overlay_bar, (20, bar_y1), (panel_w-20, bar_y2), status_color, -1)
+            cv2.addWeighted(overlay_bar, 0.3, frame, 0.7, 0, frame)
+            # 2. Неонова рамка
+            cv2.rectangle(frame, (20, bar_y1), (panel_w-20, bar_y2), status_color, 3, cv2.LINE_AA)
+            # 3. Текст (світиться кольором)
+            text_y = int((bar_y1 + bar_y2) / 2) + 10
+            cv2.putText(frame, feedback_text, (40, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1.2, status_color, 2, cv2.LINE_AA)
 
-            # Кнопки
             cv2.putText(frame, "[1] SQUATS  [2] PUSHUPS", (30, h-100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_CYAN, 1)
             cv2.putText(frame, "[R] RESET   [Q] EXIT", (30, h-60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100,100,255), 1)
 
