@@ -8,20 +8,18 @@ import time
 import gc
 
 # --- НАЛАШТУВАННЯ ---
-WIN = "AI Fitness Pro V8.3 (Stable)"
+WIN = "AI Fitness V9.0 (Full Immersion)"
 MODEL_PATH = "voices/amy.onnx"
 SCREEN_W = 1920
 SCREEN_H = 1080
 HIGHSCORE_FILE = "highscores.txt"
 
-# --- КОЛЬОРИ ---
-PASTEL_CORAL = (180, 130, 240)
-PASTEL_MINT = (200, 255, 180)
-PASTEL_BLUE = (240, 220, 180)
-CHARCOAL = (50, 50, 50)
-SOFT_GREY = (160, 160, 160)   # <--- ОСЬ ЦЕЙ КОЛІР БУВ ПРОПУЩЕНИЙ
-WARM_WHITE = (245, 245, 245)
-PURE_WHITE = (255, 255, 255)
+# --- КОЛЬОРИ (Apple Style / Modern UI) ---
+# Використовуємо яскраві, але приємні кольори для тексту
+MINT = (150, 255, 150)    # Успіх
+CORAL = (150, 150, 255)   # Помилка (у BGR це червоний відтінок)
+WHITE = (255, 255, 255)
+GLASS_BG = (30, 30, 30)   # Колір напівпрозорих плашок
 
 def load_highscores():
     scores = {"SQUATS": 0, "PUSHUPS": 0}
@@ -61,9 +59,15 @@ def calculate_angle(a, b, c):
     if angle > 180.0: angle = 360-angle
     return angle
 
+# Функція для малювання напівпрозорих плашок (Glassmorphism)
+def draw_glass_rect(frame, x, y, w, h, color, alpha=0.6):
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x, y), (x+w, y+h), color, -1)
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+
 def main():
     picam2 = Picamera2()
-    # Оптимізація: 640x480 вхід, 20 fps (щоб не грілася)
+    # Оптимізація: вхід 640x480 для швидкості
     cfg = picam2.create_video_configuration(
         main={"size": (640, 480), "format": "RGB888"},
         controls={"FrameRate": 20}
@@ -89,20 +93,21 @@ def main():
     biomech_error = False 
     frame_count = 0
 
-    speak("System stable.")
+    speak("Full screen mode ready.")
 
     try:
         while True:
             frame = picam2.capture_array()
-            # Чистимо пам'ять кожні 100 кадрів
+            # Чистка пам'яті
             frame_count += 1
             if frame_count % 100 == 0: gc.collect()
 
             h, w, _ = frame.shape
             results = pose.process(frame)
             
-            white_overlay = np.full((h, w, 3), WARM_WHITE, dtype=np.uint8)
-            cv2.addWeighted(white_overlay, 0.1, frame, 0.9, 0, frame)
+            # --- ВІЗУАЛ: Трохи затемнюємо відео, щоб текст читався краще ---
+            # Це робить вигляд "кінематографічним"
+            cv2.addWeighted(frame, 0.8, np.zeros(frame.shape, frame.dtype), 0.2, 0, frame)
 
             elapsed = int(time.time() - start_time)
             mins, secs = divmod(elapsed, 60)
@@ -143,7 +148,6 @@ def main():
                 elif mode == "PUSHUPS":
                     p1=[lm[11].x*w,lm[11].y*h]; p2=[lm[13].x*w,lm[13].y*h]; p3=[lm[15].x*w,lm[15].y*h]
                     angle = calculate_angle(p1, p2, p3)
-
                     sh = [lm[11].x*w,lm[11].y*h]; hip = [lm[23].x*w,lm[23].y*h]; ank = [lm[27].x*w,lm[27].y*h]
                     if calculate_angle(sh, hip, ank) < 160:
                         feedback_text = "FIX BACK"; biomech_error = True
@@ -165,31 +169,52 @@ def main():
                     if 95 < angle < 130 and state == "UP" and not biomech_error:
                         feedback_text = "LOWER"
 
-            # --- UI ---
-            cv2.rectangle(frame, (20, 20), (320, 100), WARM_WHITE, -1)
-            cv2.putText(frame, f"{mode} | {counter}", (40, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, CHARCOAL, 2, cv2.LINE_AA)
+            # --- НОВИЙ ІНТЕРФЕЙС (Full Screen HUD) ---
+            
+            # 1. ЛІЧИЛЬНИК (Зліва зверху, великий, без фону, тільки тінь)
+            # Тінь для цифри
+            cv2.putText(frame, str(counter), (55, 185), cv2.FONT_HERSHEY_SIMPLEX, 6, (0,0,0), 15, cv2.LINE_AA)
+            # Сама цифра
+            cv2.putText(frame, str(counter), (55, 185), cv2.FONT_HERSHEY_SIMPLEX, 6, WHITE, 5, cv2.LINE_AA)
+            
+            # Підпис REPS
+            cv2.putText(frame, "REPS", (65, 230), cv2.FONT_HERSHEY_SIMPLEX, 1.2, WHITE, 2, cv2.LINE_AA)
+            
+            # Режим тренування (над цифрою)
+            cv2.putText(frame, mode, (60, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
 
-            cv2.rectangle(frame, (w-320, 20), (w-20, 100), WARM_WHITE, -1)
-            cv2.putText(frame, f"{timer_text} | {calories:.1f} kcal", (w-300, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, CHARCOAL, 2, cv2.LINE_AA)
+            # 2. СТАТИСТИКА (Справа зверху, акуратна плашка)
+            draw_glass_rect(frame, w-350, 20, 330, 60, GLASS_BG)
+            stats_text = f"{timer_text}  |  {calories:.1f} kcal"
+            cv2.putText(frame, stats_text, (w-330, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
+            
+            # Рекорд (під статистикою)
+            rec_text = "NEW RECORD!" if is_new_record else f"Best: {current_highscore}"
+            rec_color = MINT if is_new_record else (200, 200, 200)
+            cv2.putText(frame, rec_text, (w-330, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, rec_color, 1, cv2.LINE_AA)
 
-            if biomech_error: status_color = PASTEL_CORAL
-            elif feedback_text in ["PERFECT", "STRONG"]: status_color = PASTEL_MINT
-            elif state is None: status_color = PASTEL_BLUE
-            else: status_color = PURE_WHITE
+            # 3. ЦЕНТРАЛЬНИЙ СТАТУС (Величезний по центру)
+            # Колір залежить від ситуації
+            if biomech_error: status_color = CORAL
+            elif feedback_text in ["PERFECT", "STRONG"]: status_color = MINT
+            elif state is None: status_color = (255, 200, 100) # Жовтуватий для очікування
+            else: status_color = WHITE
 
             if feedback_text != "READY":
-                text_size = cv2.getTextSize(feedback_text, cv2.FONT_HERSHEY_SIMPLEX, 2.5, 3)[0]
+                text_size = cv2.getTextSize(feedback_text, cv2.FONT_HERSHEY_SIMPLEX, 3, 5)[0]
                 text_x = (w - text_size[0]) // 2
-                cv2.putText(frame, feedback_text, (text_x+2, 202), cv2.FONT_HERSHEY_SIMPLEX, 2.5, (200,200,200), 3, cv2.LINE_AA)
-                cv2.putText(frame, feedback_text, (text_x, 200), cv2.FONT_HERSHEY_SIMPLEX, 2.5, status_color, 3, cv2.LINE_AA)
+                text_y = h // 2  # По центру екрана
+                
+                # Малюємо темну "підкладку" (тінь), щоб читалося на будь-якому фоні
+                cv2.putText(frame, feedback_text, (text_x+5, text_y+5), cv2.FONT_HERSHEY_SIMPLEX, 3, (0,0,0), 8, cv2.LINE_AA)
+                cv2.putText(frame, feedback_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 3, status_color, 5, cv2.LINE_AA)
 
-            if is_new_record:
-                cv2.putText(frame, "NEW RECORD!", (30, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, PASTEL_CORAL, 1, cv2.LINE_AA)
-            else:
-                cv2.putText(frame, f"Best: {current_highscore}", (30, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, SOFT_GREY, 1, cv2.LINE_AA)
+            # 4. ПІДКАЗКИ (Знизу по центру, маленькі)
+            keys_text = "[1] SQUATS   [2] PUSHUPS   [R] RESET"
+            keys_size = cv2.getTextSize(keys_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
+            cv2.putText(frame, keys_text, ((w-keys_size[0])//2, h-40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,200,200), 1, cv2.LINE_AA)
 
-            cv2.putText(frame, "Keys: [1] Squats [2] Pushups [R] Reset", (w//2 - 200, h-30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, SOFT_GREY, 1, cv2.LINE_AA)
-
+            # Розтягуємо на 1920x1080
             bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             final_frame = cv2.resize(bgr_frame, (SCREEN_W, SCREEN_H))
             cv2.imshow(WIN, final_frame)
