@@ -7,23 +7,21 @@ import threading
 import time
 
 # --- НАЛАШТУВАННЯ ---
-WIN = "AI Fitness Pro V7.0 (Clean Aesthetic)"
+WIN = "AI Fitness Pro V7.1 (Symmetric UI)"
 MODEL_PATH = "voices/amy.onnx"
 SCREEN_W = 1920
 SCREEN_H = 1080
 HIGHSCORE_FILE = "highscores.txt"
 
-# --- НОВА ПАЛІТРА КОЛЬОРІВ (Пастель/Apple Style) ---
-# BGR формат
-PASTEL_CORAL = (180, 130, 240)  # М'який корал (для напруги/помилок)
-PASTEL_MINT = (200, 255, 180)   # Ніжна м'ята (для успіху)
-PASTEL_BLUE = (240, 220, 180)   # М'який блакитний (нейтральний)
-CHARCOAL = (60, 60, 60)         # Темно-сірий для основного тексту (не чорний!)
-SOFT_GREY = (160, 160, 160)     # Для другорядного тексту
-WARM_WHITE = (245, 245, 245)    # Теплий білий
+# --- КОЛЬОРИ (Pastel) ---
+PASTEL_CORAL = (180, 130, 240)
+PASTEL_MINT = (200, 255, 180)
+PASTEL_BLUE = (240, 220, 180)
+CHARCOAL = (50, 50, 50)
+SOFT_GREY = (160, 160, 160)
+WARM_WHITE = (245, 245, 245)
 PURE_WHITE = (255, 255, 255)
 
-# --- УПРАВЛІННЯ ДАНИМИ ---
 def load_highscores():
     scores = {"SQUATS": 0, "PUSHUPS": 0}
     if os.path.exists(HIGHSCORE_FILE):
@@ -42,7 +40,6 @@ def save_highscore(mode, score):
         return True
     return False
 
-# --- ГОЛОС ---
 last_speech_time = 0
 def speak_worker(text):
     safe_text = ". " + text
@@ -63,19 +60,16 @@ def calculate_angle(a, b, c):
     if angle > 180.0: angle = 360-angle
     return angle
 
-# --- НОВЕ ВИТОНЧЕНЕ МАЛЮВАННЯ ---
 def draw_elegant_style(frame, landmarks, w, h, color_main):
     connections = [
         (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
         (11, 23), (12, 24), (23, 24), (23, 25), (25, 27), (24, 26), (26, 28)
     ]
-    # Дуже тонкі білі лінії
     for start_idx, end_idx in connections:
         p1 = (int(landmarks[start_idx].x * w), int(landmarks[start_idx].y * h))
         p2 = (int(landmarks[end_idx].x * w), int(landmarks[end_idx].y * h))
         cv2.line(frame, p1, p2, PURE_WHITE, 2, cv2.LINE_AA)
     
-    # Маленькі пастельні суглоби
     for idx in [11,12,13,14,15,16,23,24,25,26,27,28]:
         cx, cy = int(landmarks[idx].x * w), int(landmarks[idx].y * h)
         cv2.circle(frame, (cx, cy), 6, color_main, -1, cv2.LINE_AA)
@@ -94,8 +88,9 @@ def main():
 
     mode = "SQUATS"
     counter = 0
-    state = "UP"
-    feedback_text = "READY"
+    # ЗМІНА 1: Початковий стан None (не рахуємо, поки не встанете)
+    state = None 
+    feedback_text = "STAND UP" # Підказка на старті
     current_color = PASTEL_BLUE
     
     start_time = time.time()
@@ -104,7 +99,7 @@ def main():
     current_highscore = highscores.get(mode, 0)
     is_new_record = False
 
-    speak("Clean interface loaded.")
+    speak("Please stand up to start.")
 
     try:
         while True:
@@ -112,8 +107,6 @@ def main():
             h, w, _ = frame.shape
             results = pose.process(frame)
             
-            # --- ЕФЕКТ "М'ЯКОГО ФОКУСУ" ---
-            # Накладаємо напівпрозорий білий шар на все відео
             white_overlay = np.full((h, w, 3), WARM_WHITE, dtype=np.uint8)
             cv2.addWeighted(white_overlay, 0.15, frame, 0.85, 0, frame)
 
@@ -129,16 +122,28 @@ def main():
                     p1=[lm[23].x*w,lm[23].y*h]; p2=[lm[25].x*w,lm[25].y*h]; p3=[lm[27].x*w,lm[27].y*h]
                     angle = calculate_angle(p1, p2, p3)
                     
-                    if angle > 160:
-                        if state == "DOWN": speak("Up")
-                        state = "UP"; current_color = PASTEL_BLUE
+                    # ЗМІНА 2: Логіка "Розумний старт"
+                    if angle > 165: # Людина встала рівно
+                        if state is None: # Перший старт
+                            speak("Ready")
+                            feedback_text = "READY"
+                        if state == "DOWN":
+                            speak("Up")
+                        state = "UP"
+                        current_color = PASTEL_BLUE
+                    
+                    # Рахуємо тільки якщо ми вже були в стані UP
                     if angle < 100 and state == "UP":
-                        state = "DOWN"; counter += 1; calories += 0.32
-                        speak(f"{counter}"); feedback_text = "PERFECT"
+                        state = "DOWN"
+                        counter += 1
+                        calories += 0.32
+                        speak(str(counter))
+                        feedback_text = "PERFECT"
                         current_color = PASTEL_MINT
                         if counter > current_highscore:
                             if not is_new_record: speak("New Record!")
                             is_new_record = True; current_highscore = counter; save_highscore(mode, current_highscore)
+                    
                     if 110 < angle < 140 and state == "UP":
                         feedback_text = "LOWER"; current_color = PASTEL_CORAL
 
@@ -146,55 +151,56 @@ def main():
                     p1=[lm[11].x*w,lm[11].y*h]; p2=[lm[13].x*w,lm[13].y*h]; p3=[lm[15].x*w,lm[15].y*h]
                     angle = calculate_angle(p1, p2, p3)
 
-                    if angle > 160:
+                    if angle > 165:
+                        if state is None: speak("Ready"); feedback_text = "READY"
                         if state == "DOWN": speak("Up")
                         state = "UP"; current_color = PASTEL_BLUE
+                    
                     if angle < 90 and state == "UP":
                         state = "DOWN"; counter += 1; calories += 0.45
-                        speak(f"{counter}"); feedback_text = "STRONG"
+                        speak(str(counter)); feedback_text = "STRONG"
                         current_color = PASTEL_MINT
                         if counter > current_highscore:
                             if not is_new_record: speak("New Record!")
                             is_new_record = True; current_highscore = counter; save_highscore(mode, current_highscore)
+                    
                     if 95 < angle < 130 and state == "UP":
                         feedback_text = "LOWER"; current_color = PASTEL_CORAL
 
                 draw_elegant_style(frame, lm, w, h, current_color)
 
-            # --- НОВИЙ MINIMALIST UI ---
+            # --- UI V7.1 (Симетричний) ---
             
-            # 1. Блок лічильника (Верхній лівий кут, плаваючий)
-            # Малюємо м'яку підкладку для тексту
-            cv2.rectangle(frame, (20, 20), (350, 250), WARM_WHITE, -1)
-            # Режим
-            cv2.putText(frame, mode, (50, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, SOFT_GREY, 2, cv2.LINE_AA)
-            # Велика цифра (тонка і темна)
-            cv2.putText(frame, str(counter), (50, 180), cv2.FONT_HERSHEY_SIMPLEX, 4, CHARCOAL, 5, cv2.LINE_AA)
-            # Reps
-            cv2.putText(frame, "reps", (180, 180), cv2.FONT_HERSHEY_SIMPLEX, 1, SOFT_GREY, 2, cv2.LINE_AA)
-            # Рекорд
-            if is_new_record:
-                cv2.putText(frame, f"NEW RECORD!", (50, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.7, PASTEL_CORAL, 2, cv2.LINE_AA)
-            else:
-                cv2.putText(frame, f"Best: {current_highscore}", (50, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.7, SOFT_GREY, 2, cv2.LINE_AA)
+            # 1. ЛІВИЙ БЛОК (Лічильник) - Тепер такий самий маленький, як правий
+            cv2.rectangle(frame, (20, 20), (320, 100), WARM_WHITE, -1)
+            # Формат: SQUATS | 9 reps
+            cv2.putText(frame, f"{mode} | {counter}", (40, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, CHARCOAL, 2, cv2.LINE_AA)
 
-            # 2. Блок статистики (Верхній правий кут)
+            # 2. ПРАВИЙ БЛОК (Статистика)
             cv2.rectangle(frame, (w-320, 20), (w-20, 100), WARM_WHITE, -1)
             cv2.putText(frame, f"{timer_text} | {calories:.1f} kcal", (w-300, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, CHARCOAL, 2, cv2.LINE_AA)
 
-            # 3. ЦЕНТРАЛЬНИЙ СТАТУС (Найважливіше!)
-            # Ніяких рамок. Просто великий, красивий кольоровий текст по центру зверху.
+            # 3. ЦЕНТРАЛЬНИЙ СТАТУС
             status_color = PASTEL_MINT if feedback_text in ["PERFECT", "STRONG"] else (PASTEL_CORAL if feedback_text == "LOWER" else PURE_WHITE)
+            
+            # Якщо ми ще не встали - пишемо підказку
+            if state is None:
+                status_color = PASTEL_BLUE
+            
             if feedback_text != "READY":
                 text_size = cv2.getTextSize(feedback_text, cv2.FONT_HERSHEY_SIMPLEX, 2.5, 3)[0]
                 text_x = (w - text_size[0]) // 2
-                # Малюємо легку тінь для об'єму
                 cv2.putText(frame, feedback_text, (text_x+2, 202), cv2.FONT_HERSHEY_SIMPLEX, 2.5, (200,200,200), 3, cv2.LINE_AA)
-                # Основний текст
                 cv2.putText(frame, feedback_text, (text_x, 200), cv2.FONT_HERSHEY_SIMPLEX, 2.5, status_color, 3, cv2.LINE_AA)
 
-            # Кнопки (маленькі, внизу)
-            cv2.putText(frame, "1:Squats 2:Pushups R:Reset Q:Exit", (w//2 - 200, h-30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, SOFT_GREY, 1, cv2.LINE_AA)
+            # Рекорд під лічильником (маленьким)
+            if is_new_record:
+                cv2.putText(frame, "NEW RECORD!", (30, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, PASTEL_CORAL, 1, cv2.LINE_AA)
+            else:
+                cv2.putText(frame, f"Best: {current_highscore}", (30, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, SOFT_GREY, 1, cv2.LINE_AA)
+
+            # Підказки клавіш
+            cv2.putText(frame, "Keys: [1] Squats [2] Pushups [R] Reset", (w//2 - 200, h-30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, SOFT_GREY, 1, cv2.LINE_AA)
 
             bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             final_frame = cv2.resize(bgr_frame, (SCREEN_W, SCREEN_H))
@@ -203,16 +209,16 @@ def main():
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'): break
             if key == ord('r'):
-                counter = 0; calories = 0; start_time = time.time(); feedback_text = "READY"
+                counter = 0; calories = 0; start_time = time.time(); feedback_text = "STAND UP"; state = None
                 is_new_record = False; speak("Reset")
             if key == ord('1'):
-                mode = "SQUATS"; counter = 0; calories = 0; start_time = time.time()
+                mode = "SQUATS"; counter = 0; calories = 0; start_time = time.time(); state = None
                 highscores = load_highscores(); current_highscore = highscores.get(mode, 0)
-                is_new_record = False; speak("Squats mode")
+                is_new_record = False; speak("Squats")
             if key == ord('2'):
-                mode = "PUSHUPS"; counter = 0; calories = 0; start_time = time.time()
+                mode = "PUSHUPS"; counter = 0; calories = 0; start_time = time.time(); state = None
                 highscores = load_highscores(); current_highscore = highscores.get(mode, 0)
-                is_new_record = False; speak("Pushups mode")
+                is_new_record = False; speak("Pushups")
 
     except Exception as e: print(f"Error: {e}")
     finally: picam2.stop(); cv2.destroyAllWindows()
