@@ -7,7 +7,7 @@ import threading
 import time
 
 # --- НАЛАШТУВАННЯ ---
-WIN = "AI Fitness Pro V8.0 (Biomechanics)"
+WIN = "AI Fitness Pro V8.1 (Fixed)"
 MODEL_PATH = "voices/amy.onnx"
 SCREEN_W = 1920
 SCREEN_H = 1080
@@ -18,6 +18,7 @@ PASTEL_CORAL = (180, 130, 240) # Помилка
 PASTEL_MINT = (200, 255, 180)  # Успіх
 PASTEL_BLUE = (240, 220, 180)  # Нейтральний
 CHARCOAL = (50, 50, 50)
+SOFT_GREY = (160, 160, 160)    # <--- ПОВЕРНУВ ЦЕЙ КОЛІР
 WARM_WHITE = (245, 245, 245)
 PURE_WHITE = (255, 255, 255)
 
@@ -174,10 +175,6 @@ def main():
                     
                     if 95 < angle < 130 and state == "UP" and not biomech_error:
                         feedback_text = "LOWER"
-
-                # --- МАЛЮВАННЯ ВИМКНЕНО ---
-                # Ми більше не викликаємо draw_elegant_style()
-                # Екран залишається чистим
 
             # --- UI ---
             # Лічильник
