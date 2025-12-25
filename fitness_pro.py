@@ -7,18 +7,17 @@ import threading
 import time
 
 # --- НАЛАШТУВАННЯ ---
-WIN = "AI Fitness Pro V7.1 (Symmetric UI)"
+WIN = "AI Fitness Pro V8.0 (Biomechanics)"
 MODEL_PATH = "voices/amy.onnx"
 SCREEN_W = 1920
 SCREEN_H = 1080
 HIGHSCORE_FILE = "highscores.txt"
 
-# --- КОЛЬОРИ (Pastel) ---
-PASTEL_CORAL = (180, 130, 240)
-PASTEL_MINT = (200, 255, 180)
-PASTEL_BLUE = (240, 220, 180)
+# --- КОЛЬОРИ (Clean Style) ---
+PASTEL_CORAL = (180, 130, 240) # Помилка
+PASTEL_MINT = (200, 255, 180)  # Успіх
+PASTEL_BLUE = (240, 220, 180)  # Нейтральний
 CHARCOAL = (50, 50, 50)
-SOFT_GREY = (160, 160, 160)
 WARM_WHITE = (245, 245, 245)
 PURE_WHITE = (255, 255, 255)
 
@@ -60,21 +59,6 @@ def calculate_angle(a, b, c):
     if angle > 180.0: angle = 360-angle
     return angle
 
-def draw_elegant_style(frame, landmarks, w, h, color_main):
-    connections = [
-        (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
-        (11, 23), (12, 24), (23, 24), (23, 25), (25, 27), (24, 26), (26, 28)
-    ]
-    for start_idx, end_idx in connections:
-        p1 = (int(landmarks[start_idx].x * w), int(landmarks[start_idx].y * h))
-        p2 = (int(landmarks[end_idx].x * w), int(landmarks[end_idx].y * h))
-        cv2.line(frame, p1, p2, PURE_WHITE, 2, cv2.LINE_AA)
-    
-    for idx in [11,12,13,14,15,16,23,24,25,26,27,28]:
-        cx, cy = int(landmarks[idx].x * w), int(landmarks[idx].y * h)
-        cv2.circle(frame, (cx, cy), 6, color_main, -1, cv2.LINE_AA)
-        cv2.circle(frame, (cx, cy), 2, PURE_WHITE, -1, cv2.LINE_AA)
-
 def main():
     picam2 = Picamera2()
     cfg = picam2.create_video_configuration(main={"size": (1280, 720), "format": "RGB888"}, controls={"FrameRate": 30})
@@ -88,18 +72,19 @@ def main():
 
     mode = "SQUATS"
     counter = 0
-    # ЗМІНА 1: Початковий стан None (не рахуємо, поки не встанете)
     state = None 
-    feedback_text = "STAND UP" # Підказка на старті
-    current_color = PASTEL_BLUE
+    feedback_text = "STAND UP"
     
     start_time = time.time()
     calories = 0.0
     highscores = load_highscores()
     current_highscore = highscores.get(mode, 0)
     is_new_record = False
+    
+    # Змінна для контролю помилок біомеханіки
+    biomech_error = False 
 
-    speak("Please stand up to start.")
+    speak("Biomechanics mode active.")
 
     try:
         while True:
@@ -107,99 +92,124 @@ def main():
             h, w, _ = frame.shape
             results = pose.process(frame)
             
+            # Ефект м'якого фокусу
             white_overlay = np.full((h, w, 3), WARM_WHITE, dtype=np.uint8)
-            cv2.addWeighted(white_overlay, 0.15, frame, 0.85, 0, frame)
+            cv2.addWeighted(white_overlay, 0.1, frame, 0.9, 0, frame)
 
             elapsed = int(time.time() - start_time)
             mins, secs = divmod(elapsed, 60)
             timer_text = f"{mins:02}:{secs:02}"
+            
+            biomech_error = False # Скидаємо помилку на кожному кадрі
 
             if results.pose_landmarks:
                 lm = results.pose_landmarks.landmark
                 angle = 0
                 
                 if mode == "SQUATS":
+                    # Основний кут (Стегно-Коліно-Щиколотка)
                     p1=[lm[23].x*w,lm[23].y*h]; p2=[lm[25].x*w,lm[25].y*h]; p3=[lm[27].x*w,lm[27].y*h]
                     angle = calculate_angle(p1, p2, p3)
                     
-                    # ЗМІНА 2: Логіка "Розумний старт"
-                    if angle > 165: # Людина встала рівно
-                        if state is None: # Перший старт
-                            speak("Ready")
-                            feedback_text = "READY"
-                        if state == "DOWN":
-                            speak("Up")
-                        state = "UP"
-                        current_color = PASTEL_BLUE
+                    # --- БІОМЕХАНІКА: Контроль колін ---
+                    # Перевіряємо відстань між колінами (25, 26) та щиколотками (27, 28)
+                    knee_dist = abs(lm[25].x - lm[26].x)
+                    ankle_dist = abs(lm[27].x - lm[28].x)
                     
-                    # Рахуємо тільки якщо ми вже були в стані UP
+                    # Якщо коліна значно вужче за стопи (звалюються всередину)
+                    if state == "DOWN" and knee_dist < (ankle_dist * 0.7):
+                        feedback_text = "KNEES OUT!"
+                        biomech_error = True
+
+                    # Логіка рахунку
+                    if angle > 165: 
+                        if state is None: speak("Ready"); feedback_text = "READY"
+                        if state == "DOWN": speak("Up")
+                        state = "UP"
+                    
                     if angle < 100 and state == "UP":
                         state = "DOWN"
-                        counter += 1
-                        calories += 0.32
-                        speak(str(counter))
-                        feedback_text = "PERFECT"
-                        current_color = PASTEL_MINT
-                        if counter > current_highscore:
-                            if not is_new_record: speak("New Record!")
-                            is_new_record = True; current_highscore = counter; save_highscore(mode, current_highscore)
+                        if not biomech_error: # Зараховуємо тільки якщо техніка ок
+                            counter += 1
+                            calories += 0.32
+                            speak(str(counter))
+                            feedback_text = "PERFECT"
+                            if counter > current_highscore:
+                                if not is_new_record: speak("New Record!")
+                                is_new_record = True; current_highscore = counter; save_highscore(mode, current_highscore)
                     
-                    if 110 < angle < 140 and state == "UP":
-                        feedback_text = "LOWER"; current_color = PASTEL_CORAL
+                    if 110 < angle < 140 and state == "UP" and not biomech_error:
+                        feedback_text = "LOWER"
 
                 elif mode == "PUSHUPS":
                     p1=[lm[11].x*w,lm[11].y*h]; p2=[lm[13].x*w,lm[13].y*h]; p3=[lm[15].x*w,lm[15].y*h]
                     angle = calculate_angle(p1, p2, p3)
 
+                    # --- БІОМЕХАНІКА: Рівна спина ---
+                    # Кут: Плече(11) - Стегно(23) - Щиколотка(27)
+                    sh = [lm[11].x*w,lm[11].y*h]
+                    hip = [lm[23].x*w,lm[23].y*h]
+                    ank = [lm[27].x*w,lm[27].y*h]
+                    back_angle = calculate_angle(sh, hip, ank)
+
+                    if back_angle < 160: # Спина провисає
+                        feedback_text = "FIX BACK"
+                        biomech_error = True
+
                     if angle > 165:
                         if state is None: speak("Ready"); feedback_text = "READY"
                         if state == "DOWN": speak("Up")
-                        state = "UP"; current_color = PASTEL_BLUE
+                        state = "UP"
                     
                     if angle < 90 and state == "UP":
-                        state = "DOWN"; counter += 1; calories += 0.45
-                        speak(str(counter)); feedback_text = "STRONG"
-                        current_color = PASTEL_MINT
-                        if counter > current_highscore:
-                            if not is_new_record: speak("New Record!")
-                            is_new_record = True; current_highscore = counter; save_highscore(mode, current_highscore)
+                        state = "DOWN"
+                        if not biomech_error:
+                            counter += 1
+                            calories += 0.45
+                            speak(str(counter))
+                            feedback_text = "STRONG"
+                            if counter > current_highscore:
+                                if not is_new_record: speak("New Record!")
+                                is_new_record = True; current_highscore = counter; save_highscore(mode, current_highscore)
                     
-                    if 95 < angle < 130 and state == "UP":
-                        feedback_text = "LOWER"; current_color = PASTEL_CORAL
+                    if 95 < angle < 130 and state == "UP" and not biomech_error:
+                        feedback_text = "LOWER"
 
-                draw_elegant_style(frame, lm, w, h, current_color)
+                # --- МАЛЮВАННЯ ВИМКНЕНО ---
+                # Ми більше не викликаємо draw_elegant_style()
+                # Екран залишається чистим
 
-            # --- UI V7.1 (Симетричний) ---
-            
-            # 1. ЛІВИЙ БЛОК (Лічильник) - Тепер такий самий маленький, як правий
+            # --- UI ---
+            # Лічильник
             cv2.rectangle(frame, (20, 20), (320, 100), WARM_WHITE, -1)
-            # Формат: SQUATS | 9 reps
             cv2.putText(frame, f"{mode} | {counter}", (40, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, CHARCOAL, 2, cv2.LINE_AA)
 
-            # 2. ПРАВИЙ БЛОК (Статистика)
+            # Статистика
             cv2.rectangle(frame, (w-320, 20), (w-20, 100), WARM_WHITE, -1)
             cv2.putText(frame, f"{timer_text} | {calories:.1f} kcal", (w-300, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, CHARCOAL, 2, cv2.LINE_AA)
 
-            # 3. ЦЕНТРАЛЬНИЙ СТАТУС
-            status_color = PASTEL_MINT if feedback_text in ["PERFECT", "STRONG"] else (PASTEL_CORAL if feedback_text == "LOWER" else PURE_WHITE)
-            
-            # Якщо ми ще не встали - пишемо підказку
-            if state is None:
-                status_color = PASTEL_BLUE
-            
+            # ЦЕНТРАЛЬНИЙ СТАТУС
+            if biomech_error:
+                status_color = PASTEL_CORAL # Червоний при помилці
+            elif feedback_text in ["PERFECT", "STRONG"]:
+                status_color = PASTEL_MINT # Зелений
+            elif state is None:
+                status_color = PASTEL_BLUE # Синій (очікування)
+            else:
+                status_color = PURE_WHITE
+
             if feedback_text != "READY":
                 text_size = cv2.getTextSize(feedback_text, cv2.FONT_HERSHEY_SIMPLEX, 2.5, 3)[0]
                 text_x = (w - text_size[0]) // 2
                 cv2.putText(frame, feedback_text, (text_x+2, 202), cv2.FONT_HERSHEY_SIMPLEX, 2.5, (200,200,200), 3, cv2.LINE_AA)
                 cv2.putText(frame, feedback_text, (text_x, 200), cv2.FONT_HERSHEY_SIMPLEX, 2.5, status_color, 3, cv2.LINE_AA)
 
-            # Рекорд під лічильником (маленьким)
+            # Рекорд
             if is_new_record:
                 cv2.putText(frame, "NEW RECORD!", (30, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, PASTEL_CORAL, 1, cv2.LINE_AA)
             else:
                 cv2.putText(frame, f"Best: {current_highscore}", (30, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, SOFT_GREY, 1, cv2.LINE_AA)
 
-            # Підказки клавіш
             cv2.putText(frame, "Keys: [1] Squats [2] Pushups [R] Reset", (w//2 - 200, h-30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, SOFT_GREY, 1, cv2.LINE_AA)
 
             bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
